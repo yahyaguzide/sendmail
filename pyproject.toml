@@ -1,0 +1,40 @@
+[tool.poetry]
+name = "sendmail"
+version = "1.0.0"
+description = "An app that allows sending mails over amazon sals service to recipients."
+authors = ["yahya.guezide <yahya.guezide@sva.de>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.9"
+
+
+[tool.poetry.group.dev.dependencies]
+cython = "^3.0.11"
+setuptools = "^75.8.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pylint.format]
+max-line-length = 100
+
+[tool.pylint.messages_control]
+disable = ["missing-function-docstring"]
+
+[tool.black]
+line-length = 100
+
+[tool.mypy]
+python_executable = "../.venv/bin/python"
+
+[tool.pylint.main]
+init-hook = """
+try:
+    import pylint_venv
+except ImportError:
+    pass
+else:
+    pylint_venv.inithook()
+"""
