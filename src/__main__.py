@@ -4,7 +4,8 @@ Create mail and send
 
 from typing import Union
 from os.path import exists as path_exists
-from os import environ as os_environ, getenv as os_getenv
+from pathlib import Path
+from os import getenv as os_getenv
 import smtplib
 import ssl
 import argparse
@@ -94,33 +95,23 @@ if __name__ == "__main__":
         "--message_file",
         help="A file which hold the body of the mail",
         required=False,
-        type=argparse.FileType("r"),
+        type=Path,
     )
-
-    #    parser.add_argument(
-    #        "-l", "--login", help="Login for the SASL smtp server", required=False
-    #    )
-    #    parser.add_argument(
-    #        "-p",
-    #        "--password",
-    #        help="Password for the login, do not use this option in a production environment",
-    #    )
-
     parser.add_argument(
         "-L",
         "--login_file",
         help="Path to a file which holds the login:password",
         required=False,
-        type=str,
+        type=Path,
     )
 
-    # File is a readable file
     parser.add_argument(
         "-a",
-        "--attach_files",
+        "--attach_file",
         help="Path to a file attachment",
+        action="append",
         required=False,
-        type=argparse.FileType("r"),
+        type=Path,
     )
 
     parser.add_argument(
@@ -136,47 +127,48 @@ if __name__ == "__main__":
     if sasl_login := os_getenv("AWS_SASL_LOGIN"):
         _login, _password = sasl_login.strip().split(sep=":", maxsplit=1)
     elif args.login_file:
-        if not path_exists(args.login_file):
-            raise FileNotFoundError(f"Could not find file {args.login_file}")
-        content: str
-        with open(args.login_file, "r") as lf:
-            content = lf.read()
-        _login, _password = content.strip().split(sep=":", maxsplit=1)
+        if not args.login_file.is_file():
+            raise ARGSError("Could not find file", args.login_file.name)
+        try:
+            _login, _password = (
+                args.login_file.read_text().strip().split(sep=":", maxsplit=1)
+            )
+        except ValueError:
+            raise SENDMAILError(
+                "Login file",
+                args.login_file.name,
+                "does not contain proper loging information",
+            )
     elif args.hashiurl and args.hashisecret:
-        tmp_path, tmp_secret = args.hashiurl.rsplit(sep="/", maxsplit=1)
-        _login, _password = get_vault_secret(args.hashisecret, tmp_path)[
-            tmp_secret
-        ].split(sep=":", maxsplit=1)
-
-    #    elif args.login and args.password:
-    #        _login = args.login
-    #        _password = args.password
+        secret_path, secret = args.hashisecret.rsplit(sep="/", maxsplit=1)
+        _login, _password = get_vault_secret(secret_path, args.hashiurl)[secret].split(
+            sep=":", maxsplit=1
+        )
     else:
         raise ARGSError(
             "--login_file, --hashiurl and --hashisecret or AWS_SASL_LOGIN as env needs to be set"
         )
 
     if args.message_file:
-        with args.message_file as mf:
-            _body = mf.read().strip()
+        if not args.message_file.is_file():
+            raise ARGSError("Could not find file", args.login_file.name)
+        _body = args.message_file.read_text()
     elif args.message:
         _body = args.message
     else:
         raise ARGSError("--message_file or --message needs to be given")
 
-    # TODO: Rewrite this with pathlib.Path
-    if args.attach_files:
-        for filepath in map(str.strip, args.attach_files.split(",")):
-            if not path_exists(filepath):
-                raise FileNotFoundError(f"Could not find file {filepath}")
-            filename = filepath.rsplit("/", maxsplit=1)[-1]
-            with open(filepath, "rb") as bf:
-                _attachment = MIMEBase("application", "octet-stream")
-                _attachment.set_payload(bf.read())
-                _attachment.add_header(
-                    "Content-Disposition",
-                    f"attachment; filename= {filename}",
-                )
+    if args.attach_file:
+        for file in args.attach_file:
+            if not file.is_file():
+                raise FileNotFoundError(f"Could not find file {file.name}")
+
+            _attachment = MIMEBase("application", "octet-stream")
+            _attachment.set_payload(file.read_bytes())
+            _attachment.add_header(
+                "Content-Disposition",
+                f"attachment; filename= {file.name}",
+            )
 
     message = create_mail(
         sender_email=args.from_mail,
