@@ -3,7 +3,6 @@ Create mail and send
 """
 
 from typing import Union
-from os.path import exists as path_exists
 from pathlib import Path
 from os import getenv as os_getenv
 import smtplib
