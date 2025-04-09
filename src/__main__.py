@@ -8,9 +8,11 @@ from os import getenv as os_getenv
 import smtplib
 import ssl
 import argparse
+import mimetypes
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
+from email import encoders
 
 from hashiget import get_vault_secret
 
@@ -28,7 +30,7 @@ def create_mail(
     recipient_email: str,
     subject: str,
     body: str,
-    attachment: Union[MIMEBase, None] = None,
+    attachments: Union[list[MIMEBase], None] = None,
 ) -> MIMEMultipart:
     message: MIMEMultipart = MIMEMultipart()
     message["From"] = sender_email
@@ -36,8 +38,9 @@ def create_mail(
     message["Subject"] = subject
 
     message.attach(MIMEText(body, "plain"))
-    if attachment:
-        message.attach(attachment)
+    if attachments:
+        for att in attachments:
+            message.attach(att)
 
     return message
 
@@ -65,7 +68,7 @@ if __name__ == "__main__":
     _login: str
     _password: str
     _body: str
-    _attachment: Union[MIMEBase, None] = None
+    _attachments: list[MIMEBase] = []
 
     parser = argparse.ArgumentParser(
         description="Simple Python Program that sends mails over an sasl service"
@@ -162,21 +165,35 @@ if __name__ == "__main__":
             if not file.is_file():
                 raise FileNotFoundError(f"Could not find file {file.name}")
 
-            _attachment = MIMEBase("application", "octet-stream")
-            _attachment.set_payload(file.read_bytes())
-            _attachment.add_header(
+            # Guess the type
+            ctype, encoding = mimetypes.guess_type(file.name)
+
+            # if no type could be guessed
+            if ctype is None or encoding is not None:
+                ctype = "application/octet-stream"
+
+            maintype, subtype = ctype.split("/", 1)
+
+            tmp_attachment = MIMEBase(maintype, subtype)
+            tmp_attachment.set_payload(file.read_bytes())
+            # enocode for email transport
+            encoders.encode_base64(tmp_attachment)
+            # add name as header
+            tmp_attachment.add_header(
                 "Content-Disposition",
-                f"attachment; filename= {file.name}",
+                f"attachment; filename={file.name}",
             )
+            _attachments.append(tmp_attachment)
 
     message = create_mail(
         sender_email=args.from_mail,
         recipient_email=args.to_mail,
         subject=args.subject,
         body=_body,
-        attachment=_attachment,
+        attachments=_attachments,
     )
 
     sendmail(
         login=_login, password=_password, message=message, smtp_server=args.smtp_server
     )
+
